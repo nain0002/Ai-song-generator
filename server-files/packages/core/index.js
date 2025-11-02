@@ -1,9 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
-
-const DATA_DIR = path.join(__dirname, '../../..', 'data');
-const USERS_PATH = path.join(DATA_DIR, 'users.json');
+const database = require('./database');
 
 const DEFAULT_INVENTORY = [
   { id: 'water', name: 'Bottle of Water', description: 'Restores a small amount of stamina.' },
@@ -27,40 +23,6 @@ function logError(message) {
   }
 }
 
-function ensureDataFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-
-  if (!fs.existsSync(USERS_PATH)) {
-    fs.writeFileSync(USERS_PATH, JSON.stringify({ users: [] }, null, 2));
-  }
-}
-
-function loadUsers() {
-  ensureDataFile();
-
-  try {
-    const buffer = fs.readFileSync(USERS_PATH, 'utf8');
-    const parsed = JSON.parse(buffer);
-    if (Array.isArray(parsed?.users)) {
-      return parsed.users;
-    }
-  } catch (error) {
-    logError(`Failed to load users.json: ${error.message}`);
-  }
-
-  return [];
-}
-
-function saveUsers(users) {
-  try {
-    fs.writeFileSync(USERS_PATH, JSON.stringify({ users }, null, 2));
-  } catch (error) {
-    logError(`Failed to save users.json: ${error.message}`);
-  }
-}
-
 function createPasswordRecord(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto
@@ -70,47 +32,62 @@ function createPasswordRecord(password) {
   return { salt, hash };
 }
 
-function findUser(users, username) {
-  const lower = String(username).toLowerCase();
-  return users.find((user) => user.username.toLowerCase() === lower);
-}
+function verifyPassword(password, record) {
+  const hash = crypto
+    .pbkdf2Sync(password, record.salt, 1000, 64, 'sha512')
+    .toString('hex');
 
-function createUser(username, password) {
-  const passwordRecord = createPasswordRecord(password);
-  return {
-    username,
-    password: passwordRecord,
-    inventory: [...DEFAULT_INVENTORY],
-    createdAt: new Date().toISOString()
-  };
+  return hash === record.hash;
 }
 
 function sendInventory(player, inventory) {
   player.call('inventory:update', [JSON.stringify(inventory)]);
 }
 
-const users = loadUsers();
+let isDatabaseReady = false;
+const databaseReadyPromise = database
+  .initDatabase()
+  .then(() => {
+    isDatabaseReady = true;
+    logInfo('Database connection initialised.');
+  })
+  .catch((error) => {
+    logError(`Database initialisation failed: ${error.message}`);
+  });
+
+async function ensureDatabaseReady() {
+  if (isDatabaseReady) {
+    return true;
+  }
+
+  try {
+    await databaseReadyPromise;
+  } catch (error) {
+    // Already logged inside the promise rejection
+  }
+
+  return isDatabaseReady;
+}
 
 mp.events.add('playerJoin', (player) => {
   player.outputChatBox('~b~Welcome to the Cursor RageMP Basic Server!');
   player.data.isLoggedIn = false;
   player.data.username = null;
+  player.data.userId = null;
   player.call('auth:showRegistration');
 });
 
 mp.events.add('playerQuit', (player) => {
-  if (!player?.data?.username) {
+  if (!player?.data?.userId) {
     return;
   }
 
-  const user = findUser(users, player.data.username);
-  if (user) {
-    user.lastSeenAt = new Date().toISOString();
-    saveUsers(users);
-  }
+  database
+    .updateLastSeen(player.data.userId)
+    .catch((error) => logError(`Failed to update last seen: ${error.message}`));
 });
 
-mp.events.add('auth:register', (player, username, password) => {
+mp.events.add('auth:register', async (player, username, password) => {
   const cleanUsername = String(username ?? '').trim();
   const cleanPassword = String(password ?? '').trim();
 
@@ -124,60 +101,101 @@ mp.events.add('auth:register', (player, username, password) => {
     return;
   }
 
-  if (findUser(users, cleanUsername)) {
-    player.call('auth:registrationResult', [false, 'That username is already registered.']);
+  if (!(await ensureDatabaseReady())) {
+    player.call('auth:registrationResult', [false, 'Database is not ready. Please try again shortly.']);
     return;
   }
 
-  const newUser = createUser(cleanUsername, cleanPassword);
-  users.push(newUser);
-  saveUsers(users);
+  try {
+    const existingUser = await database.getUserByUsername(cleanUsername);
+    if (existingUser) {
+      const validPassword = verifyPassword(cleanPassword, {
+        salt: existingUser.password_salt,
+        hash: existingUser.password_hash
+      });
 
-  player.data.isLoggedIn = true;
-  player.data.username = newUser.username;
-  sendInventory(player, newUser.inventory);
+      if (!validPassword) {
+        player.call('auth:registrationResult', [false, 'Incorrect password for that account.']);
+        return;
+      }
 
-  player.call('auth:registrationResult', [true, `Welcome, ${newUser.username}!`]);
-  player.outputChatBox(`~g~Registration complete. Welcome, ${newUser.username}!`);
+      const inventory = await database.getInventoryForUser(existingUser.id);
+
+      player.data.isLoggedIn = true;
+      player.data.username = existingUser.username;
+      player.data.userId = existingUser.id;
+      sendInventory(player, inventory);
+
+      player.call('auth:registrationResult', [true, `Welcome back, ${existingUser.username}!`]);
+      player.outputChatBox(`~g~Welcome back, ${existingUser.username}!`);
+      return;
+    }
+
+    const passwordRecord = createPasswordRecord(cleanPassword);
+    const userId = await database.createUser(cleanUsername, passwordRecord);
+    await database.addInventoryItems(userId, DEFAULT_INVENTORY);
+    const inventory = await database.getInventoryForUser(userId);
+
+    player.data.isLoggedIn = true;
+    player.data.username = cleanUsername;
+    player.data.userId = userId;
+    sendInventory(player, inventory);
+
+    player.call('auth:registrationResult', [true, `Welcome, ${cleanUsername}!`]);
+    player.outputChatBox(`~g~Registration complete. Welcome, ${cleanUsername}!`);
+  } catch (error) {
+    logError(`Registration failed: ${error.message}`);
+    player.call('auth:registrationResult', [false, 'An unexpected error occurred during registration.']);
+  }
 });
 
-mp.events.add('inventory:request', (player) => {
+mp.events.add('inventory:request', async (player) => {
   if (!player.data.isLoggedIn) {
     player.outputChatBox('~r~You need to register before accessing your inventory.');
     return;
   }
 
-  const user = findUser(users, player.data.username);
-  if (!user) {
-    player.outputChatBox('~r~Could not find your inventory record.');
+  if (!(await ensureDatabaseReady())) {
+    player.outputChatBox('~r~Database is not ready. Please try again.');
     return;
   }
 
-  sendInventory(player, user.inventory);
-  player.call('inventory:toggle', [true]);
+  try {
+    const inventory = await database.getInventoryForUser(player.data.userId);
+    sendInventory(player, inventory);
+    player.call('inventory:toggle', [true]);
+  } catch (error) {
+    logError(`Failed to load inventory: ${error.message}`);
+    player.outputChatBox('~r~Failed to load your inventory.');
+  }
 });
 
-mp.events.add('inventory:addItem', (player, itemId, itemName, itemDescription) => {
+mp.events.add('inventory:addItem', async (player, itemId, itemName, itemDescription) => {
   if (!player.data.isLoggedIn) {
     player.outputChatBox('~r~Register first before modifying inventory.');
     return;
   }
 
-  const user = findUser(users, player.data.username);
-  if (!user) {
-    player.outputChatBox('~r~Inventory not found.');
+  if (!(await ensureDatabaseReady())) {
+    player.outputChatBox('~r~Database is not ready. Please try again.');
     return;
   }
 
-  user.inventory.push({
+  const item = {
     id: String(itemId || `item-${Date.now()}`),
     name: String(itemName || 'Unknown Item'),
     description: String(itemDescription || 'No description provided.')
-  });
+  };
 
-  saveUsers(users);
-  sendInventory(player, user.inventory);
-  player.outputChatBox(`~g~Added ${itemName} to your inventory.`);
+  try {
+    await database.addInventoryItem(player.data.userId, item);
+    const inventory = await database.getInventoryForUser(player.data.userId);
+    sendInventory(player, inventory);
+    player.outputChatBox(`~g~Added ${item.name} to your inventory.`);
+  } catch (error) {
+    logError(`Failed to add inventory item: ${error.message}`);
+    player.outputChatBox('~r~Failed to add that item to your inventory.');
+  }
 });
 
 mp.events.addCommand('inventory', (player) => {
@@ -204,34 +222,37 @@ mp.events.add('inventory:close', (player) => {
   player.call('inventory:toggle', [false]);
 });
 
-mp.events.add('inventory:removeItem', (player, itemId) => {
+mp.events.add('inventory:removeItem', async (player, itemId) => {
   if (!player.data.isLoggedIn) {
     player.outputChatBox('~r~Register first before modifying inventory.');
     return;
   }
 
-  const user = findUser(users, player.data.username);
-  if (!user) {
-    player.outputChatBox('~r~Inventory not found.');
+  if (!(await ensureDatabaseReady())) {
+    player.outputChatBox('~r~Database is not ready. Please try again.');
     return;
   }
 
-  const previousLength = user.inventory.length;
-  user.inventory = user.inventory.filter((item) => item.id !== itemId);
+  try {
+    const removed = await database.removeInventoryItem(player.data.userId, itemId);
+    if (!removed) {
+      player.outputChatBox('~y~No item with that ID found in your inventory.');
+      return;
+    }
 
-  if (user.inventory.length === previousLength) {
-    player.outputChatBox('~y~No item with that ID found in your inventory.');
-    return;
+    const inventory = await database.getInventoryForUser(player.data.userId);
+    sendInventory(player, inventory);
+    player.outputChatBox('~g~Item removed from your inventory.');
+  } catch (error) {
+    logError(`Failed to remove item: ${error.message}`);
+    player.outputChatBox('~r~Failed to remove that item.');
   }
-
-  saveUsers(users);
-  sendInventory(player, user.inventory);
-  player.outputChatBox('~g~Item removed from your inventory.');
 });
 
 mp.events.add('auth:debugReset', (player) => {
   player.data.isLoggedIn = false;
   player.data.username = null;
+  player.data.userId = null;
   player.call('auth:showRegistration');
 });
 

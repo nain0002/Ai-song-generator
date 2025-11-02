@@ -2,7 +2,7 @@
 
 This project provides a starter Rage Multiplayer game-mode featuring:
 
-- File-backed player registration with salted+hashed passwords (PBKDF2)
+- MySQL-backed player registration/login with salted+hashed passwords (PBKDF2)
 - In-game registration UI built with CEF
 - Persistent player inventory with default starter items
 - Inventory UI (toggle with `I`) that supports removing items
@@ -15,9 +15,10 @@ Use it as a foundation for experiments, tutorials, or to bootstrap a custom game
 
 - `server-files/conf.json` ? RageMP server configuration that loads the `core` resource
 - `server-files/packages/core/` ? Node-based server logic, including registration, inventory, and chat handlers
+- `server-files/packages/core/config/database.example.json` ? Sample MySQL connection details (copy to `database.json`)
 - `server-files/client_packages/index.js` ? Client-side scripting for UI management and keybinds
 - `server-files/client_packages/cef/` ? CEF HTML/JS for registration and inventory interfaces
-- `data/users.json` ? Simple JSON database storing registered players and inventory contents
+- `database/schema.sql` ? SQL schema for accounts and inventory tables
 
 ## Getting Started
 
@@ -29,39 +30,39 @@ Use it as a foundation for experiments, tutorials, or to bootstrap a custom game
 2. **Enable Node.js support**
    - Make sure `conf.json` contains `"modules": ["node-module"]` (already configured)
 
-3. **Start the server**
+3. **Install server dependencies**
+   - Open a terminal in `server-files/packages/core`
+   - Run `npm install` to fetch the `mysql2` driver
+
+4. **Configure the database**
+   - Create a MySQL database (for example, `ragemp`)
+   - Execute the statements inside `database/schema.sql`
+   - Copy `server-files/packages/core/config/database.example.json` to `database.json`
+   - Update host/user/password to match your environment
+
+5. **Start the server**
    - On Windows, run `ragemp-server.exe`
    - On Linux, run `./ragemp-server` (ensure it is executable)
 
-4. **Connect with the RageMP client**
+6. **Connect with the RageMP client**
    - Launch the RageMP client, add your server (`127.0.0.1:22005` by default), and connect
 
 ## Gameplay Flow
 
 - New players are prompted with a registration form. The username must be unique and passwords require six characters.
 - Successful registration unlocks chat access and grants three starter items.
+- Returning players can enter the same credentials to log back in and load their saved inventory.
 - Press the `I` key (or use `/inventory`) to open the inventory UI. Items can be removed from the UI. Use `/giveitem <name>` to test adding custom items.
 - The End key (`END`) can be used during development to re-open the registration UI for the current session.
 
 ## Persistence
 
-Player data is stored in `data/users.json`. Each entry contains:
+Data lives in MySQL using the schema from `database/schema.sql`:
 
-```json
-{
-  "username": "PlayerName",
-  "password": {
-    "salt": "...",
-    "hash": "..."
-  },
-  "inventory": [
-    { "id": "water", "name": "Bottle of Water", "description": "..." }
-  ],
-  "createdAt": "2025-11-02T12:00:00.000Z"
-}
-```
+- `users` ? stores username, password salt+hash, created timestamp, and last seen timestamp
+- `inventory_items` ? stores each inventory row linked to a user
 
-Feel free to replace this simple JSON store with your preferred database (MySQL, MongoDB, etc.) by modifying `server-files/packages/core/index.js`.
+If you prefer another database, adjust `server-files/packages/core/database.js` accordingly.
 
 ## Development Notes
 

@@ -3,5 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "description": "Cursor RageMP core resource with registration, inventory, and chat",
-  "author": "Cursor"
+  "author": "Cursor",
+  "dependencies": {
+    "mysql2": "^3.11.3"
+  }
 }
