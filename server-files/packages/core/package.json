@@ -1,0 +1,7 @@
+{
+  "name": "core",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Cursor RageMP core resource with registration, inventory, and chat",
+  "author": "Cursor"
+}
