@@ -1,0 +1,18 @@
+{
+  "maxplayers": 50,
+  "name": "Cursor RageMP Basic Server",
+  "gamemode": "basic",
+  "stream-distance": 500,
+  "announce": false,
+  "csharp": "disable",
+  "port": 22005,
+  "bind": "0.0.0.0",
+  "webbind": "0.0.0.0",
+  "stream-rate": 60,
+  "voice-chat": false,
+  "allow-externals": true,
+  "resources": [
+    "core"
+  ],
+  "modules": ["node-module"]
+}

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inventory</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        --bg: rgba(13, 16, 28, 0.94);
+        --text: #f4f7ff;
+        --muted: rgba(244, 247, 255, 0.7);
+        --accent: #f8c630;
+        --border: rgba(255, 255, 255, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+
+      .inventory {
+        width: 520px;
+        max-height: 560px;
+        border-radius: 18px;
+        padding: 28px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        box-shadow: 0 24px 58px rgba(0, 0, 0, 0.42);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      header h1 {
+        font-size: 1.8rem;
+        margin: 0;
+        font-weight: 600;
+      }
+
+      header button {
+        border: none;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        padding: 8px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: background 0.2s ease;
+      }
+
+      header button:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      .items {
+        flex: 1;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 14px;
+        padding-right: 6px;
+      }
+
+      .item-card {
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid transparent;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        transition: border 0.2s ease, transform 0.2s ease;
+      }
+
+      .item-card:hover {
+        border-color: rgba(248, 198, 48, 0.6);
+        transform: translateY(-2px);
+      }
+
+      .item-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+      }
+
+      .item-desc {
+        font-size: 0.88rem;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+
+      .item-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .item-actions button {
+        border: none;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        background: rgba(248, 198, 48, 0.18);
+        color: var(--accent);
+        font-weight: 600;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+
+      .item-actions button:hover {
+        background: rgba(248, 198, 48, 0.28);
+        color: #ffdf70;
+      }
+
+      .empty-state {
+        text-align: center;
+        color: var(--muted);
+        font-size: 1rem;
+        padding: 32px 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px dashed rgba(248, 198, 48, 0.28);
+      }
+
+      footer {
+        font-size: 0.82rem;
+        color: rgba(255, 255, 255, 0.55);
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="inventory">
+      <header>
+        <h1>Your Inventory</h1>
+        <button type="button" id="close-button">Close (I)</button>
+      </header>
+
+      <section class="items" id="items"></section>
+
+      <footer>TIP: Press the <strong>I</strong> key or click Close to hide the inventory.</footer>
+    </div>
+
+    <script>
+      const itemsContainer = document.getElementById('items');
+      const closeButton = document.getElementById('close-button');
+
+      function clearItems() {
+        itemsContainer.innerHTML = '';
+      }
+
+      function renderEmptyState() {
+        clearItems();
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = 'Your inventory is empty. Complete activities to earn items!';
+        itemsContainer.appendChild(empty);
+      }
+
+      function createItemCard(item) {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+
+        const title = document.createElement('div');
+        title.className = 'item-title';
+        title.textContent = item.name || 'Unknown Item';
+
+        const description = document.createElement('div');
+        description.className = 'item-desc';
+        description.textContent = item.description || 'No description provided.';
+
+        const actionBar = document.createElement('div');
+        actionBar.className = 'item-actions';
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', () => {
+          if (typeof mp !== 'undefined' && mp.trigger) {
+            mp.trigger('cef:inventory:removeItem', item.id);
+          } else {
+            console.warn('mp.trigger not available - cannot remove item.');
+          }
+        });
+
+        actionBar.appendChild(removeButton);
+
+        card.appendChild(title);
+        card.appendChild(description);
+        card.appendChild(actionBar);
+
+        return card;
+      }
+
+      window.updateInventory = function updateInventory(items) {
+        try {
+          const inventory = Array.isArray(items) ? items : JSON.parse(items || '[]');
+          clearItems();
+
+          if (!inventory.length) {
+            renderEmptyState();
+            return;
+          }
+
+          inventory.forEach((item) => {
+            itemsContainer.appendChild(createItemCard(item));
+          });
+        } catch (error) {
+          console.error('Failed to update inventory', error);
+          renderEmptyState();
+        }
+      };
+
+      function closeInventory() {
+        if (typeof mp !== 'undefined' && mp.trigger) {
+          mp.trigger('cef:inventory:close');
+        } else {
+          console.warn('mp.trigger not available - cannot close inventory.');
+        }
+      }
+
+      closeButton.addEventListener('click', closeInventory);
+
+      document.addEventListener('keyup', (event) => {
+        if (event.key.toLowerCase() === 'i' || event.key === 'Escape') {
+          closeInventory();
+        }
+      });
+
+      renderEmptyState();
+    </script>
+  </body>
+</html>
