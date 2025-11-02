@@ -24,6 +24,7 @@ Use it as a foundation for experiments, tutorials, or to bootstrap a custom game
 1. **Install Rage Multiplayer server binaries**
    - Download the latest server package from [https://rage.mp/](https://rage.mp/)
    - Unzip the archive and copy the contents of this repository into the root `server-files` folder (overwrite if prompted)
+   - Remove any legacy `server-files/packages/client_packages` folder from older gamemodes; this template ships a placeholder to prevent stale requires
 
 2. **Enable Node.js support**
    - Make sure `conf.json` contains `"modules": ["node-module"]` (already configured)

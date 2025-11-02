@@ -11,6 +11,22 @@ const DEFAULT_INVENTORY = [
   { id: 'bandage', name: 'Bandage', description: 'Use this to slowly heal superficial wounds.' }
 ];
 
+function logInfo(message) {
+  if (global.mp?.console?.logInfo) {
+    global.mp.console.logInfo(message);
+  } else {
+    console.log(`[core] ${message}`);
+  }
+}
+
+function logError(message) {
+  if (global.mp?.console?.logError) {
+    global.mp.console.logError(message);
+  } else {
+    console.error(`[core] ${message}`);
+  }
+}
+
 function ensureDataFile() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -31,7 +47,7 @@ function loadUsers() {
       return parsed.users;
     }
   } catch (error) {
-    mp.console.logError(`Failed to load users.json: ${error.message}`);
+    logError(`Failed to load users.json: ${error.message}`);
   }
 
   return [];
@@ -41,7 +57,7 @@ function saveUsers(users) {
   try {
     fs.writeFileSync(USERS_PATH, JSON.stringify({ users }, null, 2));
   } catch (error) {
-    mp.console.logError(`Failed to save users.json: ${error.message}`);
+    logError(`Failed to save users.json: ${error.message}`);
   }
 }
 
@@ -237,4 +253,4 @@ mp.events.addCommand('giveitem', (player, fullText) => {
   mp.events.call('inventory:addItem', player, itemId, input, description);
 });
 
-mp.console.logInfo('Core package loaded: registration, inventory, and chat are ready.');
+logInfo('Core package loaded: registration, inventory, and chat are ready.');
